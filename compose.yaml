@@ -1,0 +1,79 @@
+name: secret-santa
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-secret_santa}
+      MYSQL_USER: ${MYSQL_USER:-santa}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    ports: ["127.0.0.1:3306:3306"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -h127.0.0.1 -u$$MYSQL_USER -D$$MYSQL_DATABASE -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  api:
+    build: {context: ., target: api}
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-santa}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-secret_santa}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3001}
+      PORT: 4000
+    ports: ["127.0.0.1:4000:4000"]
+    depends_on:
+      mysql: {condition: service_healthy}
+    restart: unless-stopped
+  participant:
+    build:
+      context: .
+      target: participant
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_PARTICIPANT_URL: ${WEB_ORIGIN:-http://localhost:3000}
+        NEXT_PUBLIC_ADMIN_URL: ${ADMIN_ORIGIN:-http://localhost:3001}
+    ports: ["127.0.0.1:3000:80"]
+    depends_on: [api]
+    restart: unless-stopped
+  admin:
+    build:
+      context: .
+      target: admin
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_PARTICIPANT_URL: ${WEB_ORIGIN:-http://localhost:3000}
+        NEXT_PUBLIC_ADMIN_URL: ${ADMIN_ORIGIN:-http://localhost:3001}
+    ports: ["127.0.0.1:3001:80"]
+    depends_on: [api]
+    restart: unless-stopped
+  admin-bootstrap:
+    profiles: [bootstrap]
+    build: {context: ., target: api}
+    command: ["node", "apps/api/dist/seed-admin.js"]
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-santa}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-secret_santa}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_TOTP_SECRET: ${ADMIN_TOTP_SECRET}
+    depends_on:
+      mysql: {condition: service_healthy}
+  worker:
+    profiles: [email]
+    build: {context: ., target: api}
+    command: ["node", "apps/api/dist/worker.js"]
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-santa}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-secret_santa}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+    depends_on:
+      mysql: {condition: service_healthy}
+    restart: unless-stopped
+volumes:
+  mysql_data:

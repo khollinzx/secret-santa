@@ -1,0 +1,11 @@
+import {spawnSync} from 'node:child_process';
+const target=process.argv[2];
+if(!['participant','admin'].includes(target))throw new Error('Choose participant or admin.');
+const origin=(value)=>{if(!value)return '';const parsed=new URL(value.includes('://')?value:`https://${value}`);if(!['http:','https:'].includes(parsed.protocol))throw new Error('An HTTP(S) origin is required.');return parsed.origin;};
+const env={...process.env,NEXT_TELEMETRY_DISABLED:'1'};
+env.NEXT_PUBLIC_API_URL=origin(env.NEXT_PUBLIC_API_URL||env.PUBLIC_API_HOST);
+env.NEXT_PUBLIC_ADMIN_URL=origin(env.NEXT_PUBLIC_ADMIN_URL||env.PUBLIC_ADMIN_HOST);
+env.NEXT_PUBLIC_PARTICIPANT_URL=origin(env.NEXT_PUBLIC_PARTICIPANT_URL||env.PUBLIC_WEB_HOST);
+if(!env.NEXT_PUBLIC_API_URL||!env.NEXT_PUBLIC_ADMIN_URL||!env.NEXT_PUBLIC_PARTICIPANT_URL)throw new Error('Render production builds require API, admin, and participant origins. Configure PUBLIC_API_HOST, PUBLIC_ADMIN_HOST, PUBLIC_WEB_HOST or their NEXT_PUBLIC_* equivalents.');
+const result=spawnSync('npm',['run',target==='admin'?'build:admin':'build'],{env,stdio:'inherit'});
+process.exit(result.status??1);

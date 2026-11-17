@@ -1,0 +1,23 @@
+{
+  "name": "secret-santa",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "apps/admin"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build -w apps/web && node scripts/copy-export.mjs",
+    "build:api": "npm run build -w apps/api",
+    "test": "node --test tests/*.test.mjs",
+    "start:api": "npm run start -w apps/api",
+    "build:admin": "npm run build -w apps/admin",
+    "dev:admin": "npm run dev -w apps/admin",
+    "start:worker": "npm run worker -w apps/api"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
