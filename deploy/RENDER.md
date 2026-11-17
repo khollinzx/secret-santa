@@ -9,7 +9,7 @@ The root `render.yaml` adopts the existing `secret-santa` API in Collins Benson�
 | secret-santa-admin | Separate administrator static site |
 | Supabase | External PostgreSQL; existing project and its billing plan |
 
-Free Render API instances can sleep. Review Render’s actual plan before applying it. This configuration does not create an email worker; SMTP delivery needs a separately configured worker and any associated compute charges.
+Free Render API instances can sleep. Review Render’s actual plan before applying it. Email can run inside the API after enabling MAIL_WORKER_ENABLED with a configured HTTPS provider. This adds no separate Render service. Free API sleep can delay queued delivery; use an always-on service if prompt delivery is required.
 
 ## Database connection
 
@@ -46,7 +46,25 @@ The bootstrap fails rather than overwriting an existing email. Remove the bootst
 
 ## Email and operations
 
-Invitations generate shareable links. Delivery records remain in PostgreSQL until a worker is configured. A worker uses the same repository, API build command, `DATABASE_URL`, and optional `DATABASE_SSL_CA`; start with `node apps/api/dist/worker.js`. Supply `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `MAIL_FROM` securely. Review any additional worker cost before provisioning it.
+The existing outbox covers email invitations, picking-open updates, organiser-requested reminders, and reset/cancellation notices. Emails never contain recipient assignments. HTML uses the red, gold and cream theme, escapes user content, and includes a plain-text alternative.
+
+For HTTPS delivery on the current API, set these values securely in Render’s Environment page, then deploy:
+
+| Variable | Resend | SendGrid |
+| --- | --- | --- |
+| MAIL_WORKER_ENABLED | true | true |
+| MAIL_PROVIDER | resend | sendgrid |
+| MAIL_FROM | Your verified sender, optionally `Secret Santa <address@your-domain>` | Your verified sender |
+| RESEND_API_KEY | Your sending API key | Not required |
+| SENDGRID_API_KEY | Not required | Your mail-send API key |
+
+Never put API keys in frontend variables, Git, or chat. Configure the sender/domain with the selected provider first. Once enabled, pending outbox messages will be attempted, including already queued invitations; review the admin Notifications list before activation. No test emails are sent automatically during deployment.
+
+The worker claims one job atomically, records provider acceptance as `sent`, and retries temporary failures with backoff up to five attempts. Configuration/rejected-request failures are marked failed immediately. After correcting the provider settings, use the existing admin retry action. `sent` means the provider accepted the message; delivery/bounce webhooks and inbox placement tracking are not implemented. Resend retries use a stable idempotency key within the provider’s 24-hour retention window. SendGrid and SMTP delivery are at least once, so a lost acknowledgement can cause a duplicate.
+
+With MAIL_WORKER_ENABLED=true the consumer runs inside the API. Render free instances can sleep and do not guarantee timely delivery. For continuous processing, run a separate worker with the same database/TLS/mail variables and `node apps/api/dist/worker.js`; review compute charges before creating one. Set MAIL_WORKER_ENABLED=false on the API when using a dedicated worker. PostgreSQL row locks also make overlapping consumers safe.
+
+SMTP remains available with MAIL_PROVIDER=smtp plus SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and MAIL_FROM. Render’s free services block SMTP ports 25, 465 and 587, so use an HTTPS provider on this deployment.
 
 Before live use, configure backups appropriate to the Supabase plan, create the administrator, verify sign-in and invitations, race duplicate-number requests in a test exchange, and confirm only the signed-in participant sees their recipient. Local database tests must use a disposable database ending in `_test`; never run destructive tests against production.
 

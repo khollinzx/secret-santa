@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import {rateLimit} from 'express-rate-limit';
 import {z,ZodError} from 'zod';
 import {db,rows,transaction} from './db.js';
+import {EmailNotifications} from './notifications.js';
 import {hash,token,passwordHash,passwordMatches,SessionGuard,requireAdmin} from './security.js';
 // Build copies this dependency into dist/packages/domain.
 // @ts-ignore JS domain module
@@ -66,7 +67,7 @@ class AppController {
 class HealthController {
  @Get() async health(){await db.query('SELECT 1');return {status:'ok'};}
 }
-@Module({controllers:[AuthController,AppController,HealthController],providers:[SessionGuard]})class AppModule{}
+@Module({controllers:[AuthController,AppController,HealthController],providers:[SessionGuard,EmailNotifications]})class AppModule{}
 const originFromHost=(value:string|undefined)=>value?new URL(value.includes('://')?value:`https://${value}`).origin:undefined;
 process.env.WEB_ORIGIN||=originFromHost(process.env.PUBLIC_WEB_HOST);
 process.env.ADMIN_ORIGIN||=originFromHost(process.env.PUBLIC_ADMIN_HOST);

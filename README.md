@@ -8,7 +8,7 @@ A participant app and a separate admin app, with a NestJS API and Supabase Postg
 - Exchange creation, date/budget rules, invitations by reusable group link or email-bound link, membership, per-event wishlists, and gift-ready status.
 - Registration closure, secure shuffled pools, mutual/directional exclusions, transactional selection, repeat-request idempotency, private reveal, reminder requests, deadline extension, reset, cancellation, and completion.
 - Admin dashboard, event progress, user suspension/restoration, notification status/retries, and audit history. Hidden mappings are never exposed through admin endpoints.
-- Durable PostgreSQL notification outbox and SMTP worker, with retries/backoff and crash recovery. SQL-backed jobs keep this first version deployable without Redis.
+- Durable PostgreSQL notification outbox with Resend, SendGrid, and SMTP delivery, with retries/backoff and crash recovery. SQL-backed jobs keep this first version deployable without Redis.
 - Responsive participant and admin interfaces, keyboard-accessible selection and confirmation dialogs, and explicit browser-preview mode.
 
 ## Preview versus real application
@@ -65,13 +65,11 @@ Sign in through the admin app using the administrator email and password. Partic
 
 ### Enable real email delivery
 
-Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `MAIL_FROM` in `.env`, then run:
+For the current Render deployment, use HTTPS email delivery. Configure `MAIL_PROVIDER=resend` with `RESEND_API_KEY`, or `MAIL_PROVIDER=sendgrid` with `SENDGRID_API_KEY`. Set `MAIL_FROM` to a verified sender and `MAIL_WORKER_ENABLED=true` to process the outbox inside the API. Keep keys in server-side environment variables. The worker remains disabled until explicitly enabled.
 
-```bash
-docker compose --profile email up -d worker
-```
+For local SMTP delivery, set `MAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `MAIL_FROM`, then run `docker compose --profile email up -d worker`. Avoid running the inline consumer when a separate worker is intended. Both use transactional claims, retries, and crash recovery.
 
-Invitations and reminders are persisted atomically with their originating actions. The worker claims jobs using `FOR UPDATE SKIP LOCKED`, retries failures up to five times with exponential backoff, and recovers abandoned claims. Delivery is at least once, so an SMTP timeout can cause a duplicate email; a stable Message-ID helps mail systems deduplicate it. Emails link to the application and never include recipient assignments.
+See [deploy/RENDER.md](deploy/RENDER.md) for configuration, activation, and free-instance delivery delays. Provider acceptance is recorded as sent; bounce/delivery webhooks are not implemented. Emails link to the application and never include recipient assignments.
 
 ## Local development without Docker
 

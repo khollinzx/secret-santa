@@ -10,7 +10,7 @@ test('PostgreSQL API: privacy, access controls, concurrent picks, reset, and com
  const db=new pg.Client({connectionString:url,options:'-c search_path=secret_santa,public -c timezone=UTC'});await db.connect();
  await db.query('BEGIN');await db.query(await readFile(new URL('../database/001_initial.sql',import.meta.url),'utf8'));await db.query('COMMIT');
  const port=process.env.TEST_PORT||'4011';const origin=`http://127.0.0.1:${port}`;
- const server=spawn(process.execPath,['apps/api/dist/main.js'],{env:{...process.env,DATABASE_URL:url,PORT:port,WEB_ORIGIN:origin,ADMIN_ORIGIN:origin},stdio:'ignore'});
+ const server=spawn(process.execPath,['apps/api/dist/main.js'],{env:{...process.env,DATABASE_URL:url,MAIL_WORKER_ENABLED:'false',PORT:port,WEB_ORIGIN:origin,ADMIN_ORIGIN:origin},stdio:'ignore'});
  let eventId;const userIds=[];
  const call=async(path,method='GET',body,token)=>{const res=await fetch(origin+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:res.status,data:await res.json()};};
  try{
@@ -60,6 +60,24 @@ test('PostgreSQL API: privacy, access controls, concurrent picks, reset, and com
   assert.equal(new Set(recipients).size,users.length);
   assert.equal((await call(`/events/${eventId}`,'GET',undefined,organiser)).data.status,'exchange_active');
   assert.equal((await call(`/events/${eventId}/status`,'POST',{action:'complete'},organiser)).status,201);
+  // Exercise the durable outbox without contacting any real email provider.
+  process.env.DATABASE_URL=url;
+  const {deliverNextNotification}=await import('../apps/api/dist/notifications.js');
+  const workerDb=(await import('../apps/api/dist/db.js')).db;
+  try {
+   const job=(await db.query('SELECT id FROM notification_deliveries WHERE event_id=$1 ORDER BY created_at LIMIT 1',[eventId])).rows[0];assert.ok(job);
+   await db.query("UPDATE notification_deliveries SET status='sent' WHERE event_id=$1",[eventId]);
+   await db.query("UPDATE notification_deliveries SET status='pending',attempts=0,available_at=CURRENT_TIMESTAMP WHERE id=$1",[job.id]);
+   await deliverNextNotification(async()=>{throw {code:'MAIL_HTTP_403',permanent:true};});
+   assert.equal((await db.query('SELECT status FROM notification_deliveries WHERE id=$1',[job.id])).rows[0].status,'failed');
+   await db.query("UPDATE notification_deliveries SET status='pending',available_at=CURRENT_TIMESTAMP WHERE id=$1",[job.id]);
+   await deliverNextNotification(async()=>{throw {code:'MAIL_CONNECTION_FAILED'};});
+   const retry=(await db.query('SELECT status,available_at,attempts FROM notification_deliveries WHERE id=$1',[job.id])).rows[0];assert.equal(retry.status,'pending');assert.equal(retry.attempts,2);assert.ok(retry.available_at.getTime()>Date.now());
+   await db.query('UPDATE notification_deliveries SET available_at=CURRENT_TIMESTAMP WHERE id=$1',[job.id]);
+   let delivered=0;await deliverNextNotification(async()=>{delivered++;});assert.equal(delivered,1);
+   assert.equal((await db.query('SELECT status FROM notification_deliveries WHERE id=$1',[job.id])).rows[0].status,'sent');
+  } finally {await workerDb.end();}
+
  }finally{
   if(server.exitCode===null){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));}
   if(eventId){for(const table of ['notification_deliveries','audit_logs','selections','number_pool_entries','draw_exclusions','invitations','event_members'])await db.query(`DELETE FROM ${table} WHERE event_id=$1`,[eventId]);await db.query('DELETE FROM events WHERE id=$1',[eventId]);}

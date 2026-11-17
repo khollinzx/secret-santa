@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json && mkdir -p dist/packages/domain && cp ../../packages/domain/draw.mjs dist/packages/domain/draw.mjs && node ../../scripts/fix-api-import.mjs",
+    "build": "tsc -p tsconfig.json && cp src/mail-delivery.mjs dist/mail-delivery.mjs && mkdir -p dist/packages/domain && cp ../../packages/domain/draw.mjs dist/packages/domain/draw.mjs && node ../../scripts/fix-api-import.mjs",
     "start": "node dist/main.js",
     "dev": "tsx watch src/main.ts",
     "seed:admin": "tsx src/seed-admin.ts",
