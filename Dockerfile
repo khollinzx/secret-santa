@@ -16,6 +16,7 @@ COPY --from=api-build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=api-build /app/apps/api/dist ./apps/api/dist
 COPY --from=api-build /app/database ./database
 COPY --from=api-build /app/scripts/migrate-postgres.mjs ./scripts/migrate-postgres.mjs
+COPY --from=api-build /app/scripts/database-connection.mjs ./scripts/database-connection.mjs
 EXPOSE 4000
 USER node
 CMD ["sh","-c","node scripts/migrate-postgres.mjs && exec node apps/api/dist/main.js"]

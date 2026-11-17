@@ -1,11 +1,12 @@
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {db} from '../apps/api/dist/db.js';
+import {connectDatabase} from './database-connection.mjs';
 const sql=await readFile(new URL('../database/001_initial.sql',import.meta.url),'utf8');
 const checksum=createHash('sha256').update(sql).digest('hex');
 let client;
 try{
- for(let attempt=0;;attempt++){try{client=await db.connect();break;}catch{if(attempt>=29)throw new Error('PostgreSQL connection failed. Check DATABASE_URL and Supabase availability.');await new Promise(r=>setTimeout(r,2000));}}
+ client=await connectDatabase(db,process.env.DATABASE_URL);
  await client.query('SELECT pg_advisory_lock(17311001)');
  await client.query('BEGIN');
  await client.query('CREATE SCHEMA IF NOT EXISTS secret_santa');
