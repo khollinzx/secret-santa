@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
 import pg from 'pg';
-import {createHmac} from 'node:crypto';
 const runScript=(path,env)=>new Promise((resolve,reject)=>{const processHandle=spawn(process.execPath,[path],{env:{...process.env,...env},stdio:'pipe'});processHandle.on('error',reject);processHandle.on('exit',code=>code===0?resolve():reject(new Error('Script failed: '+path)));});
 const url=process.env.TEST_DATABASE_URL;
 test('PostgreSQL API: privacy, access controls, concurrent picks, reset, and completion',{skip:!url},async()=>{
@@ -19,12 +18,12 @@ test('PostgreSQL API: privacy, access controls, concurrent picks, reset, and com
   const users=[];const run=Date.now();
   for(let i=0;i<5;i++){const r=await call('/auth/register','POST',{name:`Integration Person ${i}`,email:`santa-test-${run}-${i}@example.com`,password:'Testing-password-4932!'});assert.equal(r.status,201,JSON.stringify(r.data));users.push(r.data);userIds.push(r.data.user.id);}
   const organiser=users[0].token;
-  const adminEmail=`santa-admin-${run}@example.com`;const secret='A'.repeat(32);const password='Testing-admin-password-4932!';
-  await runScript('apps/api/dist/seed-admin.js',{DATABASE_URL:url,ADMIN_EMAIL:adminEmail,ADMIN_PASSWORD:password,ADMIN_TOTP_SECRET:secret});
+  assert.equal((await call('/auth/login','POST',{email:users[0].user.email,password:'Testing-password-4932!',audience:'admin'})).status,401);
+  const adminEmail=`santa-admin-${run}@example.com`;const password='Testing-admin-password-4932!';
+  await runScript('apps/api/dist/seed-admin.js',{DATABASE_URL:url,ADMIN_EMAIL:adminEmail,ADMIN_PASSWORD:password});
   const adminId=(await db.query('SELECT id FROM users WHERE email=$1',[adminEmail])).rows[0].id;userIds.push(adminId);
-  assert.equal((await call('/auth/login','POST',{email:adminEmail,password,audience:'admin'})).status,401);
-  const counter=Buffer.alloc(8);counter.writeBigUInt64BE(BigInt(Math.floor(Date.now()/30000)));const digest=createHmac('sha1',Buffer.alloc(20)).update(counter).digest();const code=((digest.readUInt32BE(digest[19]&15)&0x7fffffff)%1000000).toString().padStart(6,'0');
-  const admin=await call('/auth/login','POST',{email:adminEmail,password,audience:'admin',code});assert.equal(admin.status,201);
+  assert.equal((await call('/auth/login','POST',{email:adminEmail,password:'wrong-password',audience:'admin'})).status,401);
+  const admin=await call('/auth/login','POST',{email:adminEmail,password,audience:'admin'});assert.equal(admin.status,201);
   const overview=await call('/admin/overview','GET',undefined,admin.data.token);assert.equal(overview.status,200);assert.equal(typeof overview.data.stats.users,'number');
   const staffParticipant=await call('/auth/login','POST',{email:adminEmail,password});assert.equal((await call('/admin/overview','GET',undefined,staffParticipant.data.token)).status,403);
 

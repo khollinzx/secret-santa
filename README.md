@@ -4,7 +4,7 @@ A participant app and a separate admin app, with a NestJS API and Supabase Postg
 
 ## What works
 
-- Participant signup/sign-in, separate administrator sign-in with password and TOTP MFA, opaque 12-hour sessions, suspension checks, rate limits, and role checks.
+- Participant signup/sign-in, separate administrator sign-in with email and password, opaque 12-hour sessions, suspension checks, rate limits, and role checks.
 - Exchange creation, date/budget rules, invitations by reusable group link or email-bound link, membership, per-event wishlists, and gift-ready status.
 - Registration closure, secure shuffled pools, mutual/directional exclusions, transactional selection, repeat-request idempotency, private reveal, reminder requests, deadline extension, reset, cancellation, and completion.
 - Admin dashboard, event progress, user suspension/restoration, notification status/retries, and audit history. Hidden mappings are never exposed through admin endpoints.
@@ -53,15 +53,15 @@ The Compose ports bind to loopback. For an internet deployment, put HTTPS revers
 
 ### Create your administrator
 
-Generate a 32-character base32 TOTP secret and enroll it in an authenticator using a standard `otpauth://totp/SecretSanta:ADMIN_EMAIL?secret=SECRET&issuer=SecretSanta` setup URI. Keep the secret private. Set `ADMIN_EMAIL`, `ADMIN_PASSWORD` (12+ characters), and `ADMIN_TOTP_SECRET` in `.env`.
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` (12+ characters) securely in `.env`.
 
 ```bash
 docker compose --profile bootstrap run --rm admin-bootstrap
 ```
 
-The bootstrap service reads the three administrator values from `.env`. Run it once per administrator email. Never put real passwords or TOTP secrets in command arguments or commit them.
+The bootstrap service reads the administrator values from `.env`. Run it once per administrator email. Never put real passwords in command arguments or commit them.
 
-Sign in through the admin app using the administrator email, password, and current 6-digit authenticator code. Participant accounts cannot access administrator endpoints, and participant-audience sessions are refused even for staff accounts.
+Sign in through the admin app using the administrator email and password. Participant accounts cannot access administrator endpoints, and participant-audience sessions are refused even for staff accounts.
 
 ### Enable real email delivery
 
@@ -75,7 +75,7 @@ Invitations and reminders are persisted atomically with their originating action
 
 ## Local development without Docker
 
-Provision PostgreSQL 17+ and set `DATABASE_URL` in `.env`. For Supabase use the session-pooler connection string from your project’s Connect panel (port 5432), including your URL-encoded database password. Hosted connections require verified TLS; set `DATABASE_SSL_CA` if the project requires its downloaded CA certificate. The application retains its existing participant sessions and administrator TOTP authentication. Supabase is the database provider; Supabase Auth and browser Data API access are not enabled.
+Provision PostgreSQL 17+ and set `DATABASE_URL` in `.env`. For Supabase use the session-pooler connection string from your project’s Connect panel (port 5432), including your URL-encoded database password. Hosted connections require verified TLS; set `DATABASE_SSL_CA` if the project requires its downloaded CA certificate. The application retains its existing participant sessions and administrator password authentication. Supabase is the database provider; Supabase Auth and browser Data API access are not enabled.
 
 ```bash
 npm ci
@@ -131,7 +131,7 @@ All endpoints except registration/login require `Authorization: Bearer <opaque-s
 | Method | Route | Purpose |
 | --- | --- | --- |
 | POST | /auth/register | Register participant |
-| POST | /auth/login | Sign in; admin audience also requires TOTP code |
+| POST | /auth/login | Sign in with email and password; admin audience requires a staff role |
 | POST | /auth/logout | Revoke current session |
 | GET | /me | Current account |
 | GET, POST | /events | List own exchanges or create one |
@@ -178,7 +178,7 @@ Official framework references:
 
 ## Administrator entry
 
-The participant app has no admin navigation link. Open `/admin/login/` directly to sign in. Visiting `/admin/` without a separate administrator session redirects there. The independent admin app exposes the same `/admin/login/` route on its own origin. Production sign-in verifies password, TOTP, role, and session audience through the API. The hosted sample preview disables credential fields and offers an explicitly labelled sample-data entry; it is not real authentication. Admin preview sign-out clears that separate preview session.
+The participant app has no admin navigation link. Open `/admin/login/` directly to sign in. Visiting `/admin/` without a separate administrator session redirects there. The independent admin app exposes the same `/admin/login/` route on its own origin. Production sign-in verifies password, role, and session audience through the API. The hosted sample preview disables credential fields and offers an explicitly labelled sample-data entry; it is not real authentication. Admin preview sign-out clears that separate preview session.
 
 ## Render and Supabase
 

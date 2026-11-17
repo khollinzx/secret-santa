@@ -6,14 +6,14 @@ import helmet from 'helmet';
 import {rateLimit} from 'express-rate-limit';
 import {z,ZodError} from 'zod';
 import {db,rows,transaction} from './db.js';
-import {hash,token,passwordHash,passwordMatches,totpMatches,SessionGuard,requireAdmin} from './security.js';
+import {hash,token,passwordHash,passwordMatches,SessionGuard,requireAdmin} from './security.js';
 // Build copies this dependency into dist/packages/domain.
 // @ts-ignore JS domain module
 import {preparePool,eligibleNumbers} from '../../../packages/domain/draw.mjs';
 const text=z.string().trim();
 const id=z.string().uuid();
 const signup=z.object({name:text.min(2).max(100),email:z.email().transform(v=>v.toLowerCase()),password:z.string().min(12).max(128)});
-const login=z.object({email:z.email().transform(v=>v.toLowerCase()),password:z.string().min(1).max(128),audience:z.enum(['participant','admin']).default('participant'),code:z.string().optional()});
+const login=z.object({email:z.email().transform(v=>v.toLowerCase()),password:z.string().min(1).max(128),audience:z.enum(['participant','admin']).default('participant')});
 const date=z.iso.date();
 const eventInput=z.object({name:text.min(3).max(120),description:text.max(2000).default(''),budget:z.number().positive().max(100000000),currency:z.enum(['NGN','USD','GBP','EUR']).default('NGN'),exchangeDate:date,registrationDeadline:date,pickingDeadline:date}).refine(v=>v.registrationDeadline<=v.pickingDeadline&&v.pickingDeadline<=v.exchangeDate,{message:'Dates must follow registration, picking, then exchange order.'}).refine(v=>v.registrationDeadline>=new Date().toISOString().slice(0,10),{message:'Registration deadline must be today or later.'});
 async function eventFor(eventId:string,user:any,conn:any=db,lock=false){id.parse(eventId);const [e]=await rows(`SELECT * FROM events WHERE id=$1${lock?' FOR UPDATE':''}`,[eventId],conn);if(!e)throw new NotFoundException('Event not found.');const [member]=await rows('SELECT * FROM event_members WHERE event_id=$1 AND user_id=$2',[eventId,user.id],conn);if(!member&&e.organiser_id!==user.id)throw new ForbiddenException('You are not a member of this exchange.');return {e,member};}
@@ -27,7 +27,7 @@ class Errors implements ExceptionFilter {catch(error:any,host:ArgumentsHost){con
 @Controller('auth')
 class AuthController {
  @Post('register') async register(@Body()body:any){const data=signup.parse(body);const userId=randomUUID();try{await rows('INSERT INTO users(id,name,email,password_hash) VALUES($1,$2,$3,$4)',[userId,data.name,data.email,await passwordHash(data.password)]);}catch(e:any){if(e.code==='23505')throw new ConflictException('Unable to create this account. Try signing in.');throw e;}return this.makeSession(userId,'participant');}
- @Post('login') async login(@Body()body:any){const data=login.parse(body);const [user]=await rows('SELECT * FROM users WHERE email=$1',[data.email]);if(!user||user.suspended||!await passwordMatches(data.password,user.password_hash))throw new UnauthorizedException('Invalid sign-in details.');if(data.audience==='admin'&&(!['support','super_admin'].includes(user.role)||!user.totp_secret||!totpMatches(user.totp_secret,data.code||'')))throw new UnauthorizedException('Invalid administrator sign-in details or authenticator code.');return this.makeSession(user.id,data.audience);}
+ @Post('login') async login(@Body()body:any){const data=login.parse(body);const [user]=await rows('SELECT * FROM users WHERE email=$1',[data.email]);if(!user||user.suspended||!await passwordMatches(data.password,user.password_hash))throw new UnauthorizedException('Invalid sign-in details.');if(data.audience==='admin'&&!['support','super_admin'].includes(user.role))throw new UnauthorizedException('Invalid administrator sign-in details.');return this.makeSession(user.id,data.audience);}
  async makeSession(userId:string,audience:string){const value=token();await rows('INSERT INTO sessions(token_hash,user_id,audience,expires_at) VALUES($1,$2,$3,(CURRENT_TIMESTAMP + INTERVAL \'12 hours\'))',[hash(value),userId,audience]);const [user]=await rows('SELECT id,name,email,role FROM users WHERE id=$1',[userId]);return {token:value,user};}
  @Post('logout') @UseGuards(SessionGuard) async logout(@Req()req:any){await rows('DELETE FROM sessions WHERE token_hash=$1',[hash(req.headers.authorization.slice(7))]);return {ok:true};}
 }

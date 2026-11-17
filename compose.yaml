@@ -57,7 +57,6 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-secret_santa}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      ADMIN_TOTP_SECRET: ${ADMIN_TOTP_SECRET}
     depends_on:
       postgres: {condition: service_healthy}
   worker:

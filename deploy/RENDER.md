@@ -18,7 +18,7 @@ Free Render API instances can sleep. Review Render’s actual plan before applyi
 3. Set this URI as `DATABASE_URL` on the API service’s Render **Environment** page. Keep it out of Git, browser variables, screenshots, and chat. If Supabase requires its downloadable CA certificate, also set `DATABASE_SSL_CA` to that certificate’s PEM content. Hosted TLS verifies certificates.
 4. Use the session pooler rather than the transaction pooler: startup migrations use a session advisory lock, and this persistent API uses a small connection pool.
 
-The backend retains its own password/session authentication and administrator TOTP. No Supabase browser keys or Supabase Auth configuration are required.
+The backend retains its own password/session authentication and administrator password authentication. No Supabase browser keys or Supabase Auth configuration are required.
 
 ## Review and deploy
 
@@ -36,13 +36,13 @@ Frontend build scripts obtain actual Render hostnames through service references
 
 ## Create the administrator
 
-After the API and database are healthy, set `ADMIN_EMAIL`, `ADMIN_PASSWORD` (12+ characters), and `ADMIN_TOTP_SECRET` (32 base32 characters) securely on the API service. Enroll the TOTP secret in an authenticator. Run in the API service shell:
+After the API and database are healthy, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` (12+ characters) securely on the API service. Run in the API service shell:
 
 ```sh
 node apps/api/dist/seed-admin.js
 ```
 
-The bootstrap fails rather than overwriting an existing email. Remove the three bootstrap environment variables afterward. If your Render service tier has no interactive shell, run the same compiled bootstrap locally using a secure `.env` with the Supabase session-pooler connection. Sign in at the administrator static site’s `/admin/login/` route with password and current TOTP code.
+The bootstrap fails rather than overwriting an existing email. Remove the bootstrap environment variables afterward. If your Render service tier has no interactive shell, run the same compiled bootstrap locally using a secure `.env` with the Supabase session-pooler connection. Sign in at the administrator static site’s `/admin/login/` route with email and password.
 
 ## Email and operations
 
