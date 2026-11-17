@@ -21,7 +21,7 @@ function save(state:any){localStorage.setItem(KEY,JSON.stringify(state));}
 export function previewUsers(){return read().users;}
 export function resetPreview(){localStorage.removeItem(KEY);}
 export async function request(path:string,method='GET',body?:any,admin=false):Promise<any>{
- if(API){const token=sessionStorage.getItem(admin?'santa-admin-token':'santa-token');return fetchJson(API+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});}
+ if(API){const token=sessionStorage.getItem(admin?'santa-admin-token':'santa-token');return fetchJson(API+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})},path==='/me'||path.startsWith('/auth/')?90000:20000);}
  const run=()=>demo(path,method,body,admin);
  if(navigator.locks)return navigator.locks.request('secret-santa-preview',run);
  return run();
