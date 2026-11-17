@@ -14,9 +14,11 @@ ENV NODE_ENV=production
 COPY --from=api-build /app/node_modules ./node_modules
 COPY --from=api-build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=api-build /app/apps/api/dist ./apps/api/dist
+COPY --from=api-build /app/database ./database
+COPY --from=api-build /app/scripts/migrate-postgres.mjs ./scripts/migrate-postgres.mjs
 EXPOSE 4000
 USER node
-CMD ["node","apps/api/dist/main.js"]
+CMD ["sh","-c","node scripts/migrate-postgres.mjs && exec node apps/api/dist/main.js"]
 FROM source AS web-build
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_ADMIN_URL

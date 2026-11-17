@@ -1,127 +1,91 @@
-# Git-backed Render Blueprint. Adopt only the existing secret-santa API service.
-# Workspace and existing API service confirmed; new services use its Oregon region.
-# The API can use a free plan initially. MySQL needs paid private compute + a disk.
+# Supabase PostgreSQL project: twydcpdjkwxgwapqsedm
+# Reuse the existing Secret Santa API; no paid Render database or disk.
 services:
-  - type: pserv
-    name: secret-santa-mysql
-    runtime: docker
-    plan: 1c-2g
-    region: oregon
-    dockerfilePath: ./deploy/render.mysql.Dockerfile
-    dockerContext: .
-    autoDeployTrigger: 'off'
-    disk:
-      name: secret-santa-data
-      mountPath: /var/lib/mysql
-      sizeGB: 3
-    envVars:
-      - key: MYSQL_DATABASE
-        value: secret_santa
-      - key: MYSQL_USER
-        value: santa
-      - key: MYSQL_PASSWORD
-        generateValue: true
-      - key: MYSQL_ROOT_PASSWORD
-        generateValue: true
-  - type: web
-    name: secret-santa
-    runtime: node
-    plan: free
-    region: oregon
-    buildCommand: npm ci --include=dev && npm run build:api
-    startCommand: node apps/api/dist/main.js
-    healthCheckPath: /health
-    autoDeployTrigger: 'off'
-    envVars:
-      - key: NODE_VERSION
-        value: '22'
-      - key: NODE_ENV
-        value: production
-      - key: DB_HOST
-        fromService:
-          type: pserv
-          name: secret-santa-mysql
-          property: host
-      - key: DB_PORT
-        value: '3306'
-      - key: DB_DATABASE
-        value: secret_santa
-      - key: DB_USERNAME
-        value: santa
-      - key: DB_PASSWORD
-        fromService:
-          type: pserv
-          name: secret-santa-mysql
-          envVarKey: MYSQL_PASSWORD
-      - key: PUBLIC_WEB_HOST
-        fromService:
-          type: web
-          name: secret-santa-web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: PUBLIC_ADMIN_HOST
-        fromService:
-          type: web
-          name: secret-santa-admin
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-  - type: web
-    name: secret-santa-web
-    runtime: static
-    buildCommand: npm ci --include=dev && node scripts/render-build.mjs participant
-    staticPublishPath: ./out
-    autoDeployTrigger: 'off'
-    envVars:
-      - key: NODE_VERSION
-        value: '22'
-      - key: PUBLIC_API_HOST
-        fromService:
-          type: web
-          name: secret-santa
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: PUBLIC_WEB_HOST
-        fromService:
-          type: web
-          name: secret-santa-web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: PUBLIC_ADMIN_HOST
-        fromService:
-          type: web
-          name: secret-santa-admin
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: X-Frame-Options
-        value: DENY
-  - type: web
-    name: secret-santa-admin
-    runtime: static
-    buildCommand: npm ci --include=dev && node scripts/render-build.mjs admin
-    staticPublishPath: ./apps/admin/out
-    autoDeployTrigger: 'off'
-    envVars:
-      - key: NODE_VERSION
-        value: '22'
-      - key: PUBLIC_API_HOST
-        fromService:
-          type: web
-          name: secret-santa
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: PUBLIC_WEB_HOST
-        fromService:
-          type: web
-          name: secret-santa-web
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-      - key: PUBLIC_ADMIN_HOST
-        fromService:
-          type: web
-          name: secret-santa-admin
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: X-Frame-Options
-        value: DENY
+- type: web
+  name: secret-santa
+  runtime: node
+  plan: free
+  region: oregon
+  buildCommand: npm ci --include=dev && npm run build:api
+  startCommand: node scripts/migrate-postgres.mjs && node apps/api/dist/main.js
+  healthCheckPath: /health
+  autoDeployTrigger: 'off'
+  envVars:
+  - key: NODE_VERSION
+    value: '22'
+  - key: NODE_ENV
+    value: production
+  - key: PUBLIC_WEB_HOST
+    fromService:
+      type: web
+      name: secret-santa-web
+      envVarKey: RENDER_EXTERNAL_HOSTNAME
+  - key: PUBLIC_ADMIN_HOST
+    fromService:
+      type: web
+      name: secret-santa-admin
+      envVarKey: RENDER_EXTERNAL_HOSTNAME
+  - key: DATABASE_URL
+    sync: false
+- type: web
+  name: secret-santa-web
+  runtime: static
+  buildCommand: npm ci --include=dev && node scripts/render-build.mjs participant
+  staticPublishPath: ./out
+  autoDeployTrigger: 'off'
+  envVars:
+  - key: NODE_VERSION
+    value: '22'
+  - key: PUBLIC_API_HOST
+    fromService:
+      type: web
+      name: secret-santa
+      envVarKey: RENDER_EXTERNAL_HOSTNAME
+  - key: PUBLIC_WEB_HOST
+    fromService:
+      type: web
+      name: secret-santa-web
+      envVarKey: RENDER_EXTERNAL_HOSTNAME
+  - key: PUBLIC_ADMIN_HOST
+    fromService:
+      type: web
+      name: secret-santa-admin
+      envVarKey: RENDER_EXTERNAL_HOSTNAME
+  headers:
+  - path: /*
+    name: X-Content-Type-Options
+    value: nosniff
+  - path: /*
+    name: X-Frame-Options
+    value: DENY
+- type: web
+  name: secret-santa-admin
+  runtime: static
+  buildCommand: npm ci --include=dev && node scripts/render-build.mjs admin
+  staticPublishPath: ./apps/admin/out
+  autoDeployTrigger: 'off'
+  envVars:
+  - key: NODE_VERSION
+    value: '22'
+  - key: PUBLIC_API_HOST
+    fromService:
+      type: web
+      name: secret-santa
+      envVarKey: RENDER_EXTERNAL_HOSTNAME
+  - key: PUBLIC_WEB_HOST
+    fromService:
+      type: web
+      name: secret-santa-web
+      envVarKey: RENDER_EXTERNAL_HOSTNAME
+  - key: PUBLIC_ADMIN_HOST
+    fromService:
+      type: web
+      name: secret-santa-admin
+      envVarKey: RENDER_EXTERNAL_HOSTNAME
+  headers:
+  - path: /*
+    name: X-Content-Type-Options
+    value: nosniff
+  - path: /*
+    name: X-Frame-Options
+    value: DENY

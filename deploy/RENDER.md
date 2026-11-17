@@ -1,55 +1,56 @@
-# Deploy Secret Santa to Render
+# Render with Supabase PostgreSQL
 
-The root `render.yaml` configures the existing `secret-santa` service as the API and provisions two independently built static sites, a NestJS API, and a private MySQL 8.4 service with a persistent disk. It never substitutes PostgreSQL or deploys browser sample data as the production backend.
+The root `render.yaml` adopts the existing `secret-santa` API in Collins Benson’s Workspace and creates separate participant and administrator static sites. Persistent data lives in Supabase project `twydcpdjkwxgwapqsedm`. No Render database or disk is provisioned.
 
-## Planned resources
+| Resource | Configuration |
+| --- | --- |
+| secret-santa | Existing Node API, free instance, Oregon, `/health` readiness check |
+| secret-santa-web | Participant static site |
+| secret-santa-admin | Separate administrator static site |
+| Supabase | External PostgreSQL; existing project and its billing plan |
 
-| Resource | Runtime | Compute/storage |
-| --- | --- | --- |
-| secret-santa-web | Static Next.js export | No compute plan |
-| secret-santa-admin | Separate static Next.js export | No compute plan |
-| secret-santa | Node.js 22 / NestJS | Free initially; may sleep when idle |
-| secret-santa-mysql | Private Docker / MySQL 8.4 | Paid 1 CPU / 2 GB RAM; 3 GB persistent disk |
+Free Render API instances can sleep. Review Render’s actual plan before applying it. This configuration does not create an email worker; SMTP delivery needs a separately configured worker and any associated compute charges.
 
-The MySQL service incurs ongoing compute and storage charges. Review the current Render estimate before applying the plan. Upgrade the API to paid compute if you need uninterrupted availability. All networking resources must use the same workspace and region. Oregon matches the confirmed existing API service.
+## Database connection
 
-## Source and approval
+1. Open https://supabase.com/dashboard/project/twydcpdjkwxgwapqsedm and choose **Connect**.
+2. Copy the PostgreSQL **Session pooler** URI (port 5432). Use its actual hostname and username; do not guess the region. Supply your database password, URL-encoded where necessary. A Supabase publishable/anonymous API key is not a PostgreSQL password.
+3. Set this URI as `DATABASE_URL` on the API service’s Render **Environment** page. Keep it out of Git, browser variables, screenshots, and chat. If Supabase requires its downloadable CA certificate, also set `DATABASE_SSL_CA` to that certificate’s PEM content. Hosted TLS verifies certificates.
+4. Use the session pooler rather than the transaction pooler: startup migrations use a session advisory lock, and this persistent API uses a small connection pool.
 
-1. Push this source to the intended GitHub repository and grant Render access to it. Use a private repository unless you choose to publish the application source.
-2. Confirm the Render workspace and the project/environment identified by the supplied dashboard link.
-3. Validate `render.yaml` using Render's current CLI/API and schema, then create and inspect the Blueprint plan. The file should be on the remote branch before planning.
-4. Review all new resources and charges. Apply only after authorizing the reviewed plan. Adopt only the existing secret-santa service; do not modify unrelated services.
-5. Ensure the new resources are assigned to the intended existing project/environment. Top-level Blueprint entries do not identify the project by ID; the operator must verify assignment in the dashboard.
+The backend retains its own password/session authentication and administrator TOTP. No Supabase browser keys or Supabase Auth configuration are required.
 
-Generated database secrets remain in Render. The API receives the MySQL password by service reference and uses separate connection fields, so generated base64 characters do not break a URL. The frontends obtain actual Render hostnames through references and convert them into HTTPS origins at build time. No service URL is guessed from a desired name.
+## Review and deploy
 
-## First launch
+Push the source and `render.yaml` to `khollinzx/secret-santa` on `master`, then plan the existing Blueprint. Review the proposed API update and two static sites before approving. A plan never applies changes by itself. Where the Blueprint requests `DATABASE_URL`, either supply it through the secure Render flow, or approve in Render’s Dashboard and then set it on the API Environment page; an initial API deployment can fail until the value is present.
 
-The database Dockerfile copies the initial schema to `/docker-entrypoint-initdb.d`, which MySQL applies only when initializing an empty data directory. The API retries database readiness during startup and provides `GET /health` for Render health checks. User-created accounts start as participants; administrative endpoints continue to require an admin-audience session, staff role, password, and TOTP.
+The API build is `npm ci --include=dev && npm run build:api`. Startup is:
 
-The participant app is served at the participant site's root URL. The administrator app has its own root URL, with sign-in at `/admin/login/`. There is no admin link in the participant sidebar.
+```sh
+node scripts/migrate-postgres.mjs && node apps/api/dist/main.js
+```
 
-## Administrator bootstrap
+The migration creates only the application’s `secret_santa` schema and tables, records a SHA-256 checksum, and runs atomically under an advisory lock. Repeated starts skip the applied migration. Changing an already-applied migration is rejected; future schema changes need a new versioned migration. Row level security is enabled and schema/table access is revoked for anonymous and authenticated Supabase Data API roles. Do not add this schema to the exposed Data API schemas. The backend must connect with the owning PostgreSQL role.
 
-After the API and MySQL are live, set `ADMIN_EMAIL`, `ADMIN_PASSWORD` (12+ characters), and `ADMIN_TOTP_SECRET` (32 base32 characters) securely on the API service. Enroll the TOTP secret in an authenticator. Then run this command in the API service shell:
+Frontend build scripts obtain actual Render hostnames through service references and use HTTPS origins. Public URL changes require a frontend rebuild. `/health` queries PostgreSQL so a healthy process also confirms database connectivity.
 
-```bash
+## Create the administrator
+
+After the API and database are healthy, set `ADMIN_EMAIL`, `ADMIN_PASSWORD` (12+ characters), and `ADMIN_TOTP_SECRET` (32 base32 characters) securely on the API service. Enroll the TOTP secret in an authenticator. Run in the API service shell:
+
+```sh
 node apps/api/dist/seed-admin.js
 ```
 
-This creates one administrator and fails rather than overwriting an existing email. Never store the bootstrap password or TOTP secret in Git or chat. Once the administrator is created, remove those bootstrap environment variables through Render's Environment page. Confirm `/health` returns 200 before testing sign-in, invitations, and picking with real accounts.
+The bootstrap fails rather than overwriting an existing email. Remove the three bootstrap environment variables afterward. If your Render service tier has no interactive shell, run the same compiled bootstrap locally using a secure `.env` with the Supabase session-pooler connection. Sign in at the administrator static site’s `/admin/login/` route with password and current TOTP code.
 
-## Email worker
+## Email and operations
 
-SMTP credentials have not been supplied. Invitations can generate shareable links, while email messages remain in the MySQL outbox until a worker is configured. To enable delivery, add a background worker using the same source/region, `npm ci --include=dev && npm run build:api`, and `node apps/api/dist/worker.js`. Configure the same DB_* variables plus SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and MAIL_FROM securely. The worker needs paid compute; review its additional cost before creating it.
+Invitations generate shareable links. Delivery records remain in PostgreSQL until a worker is configured. A worker uses the same repository, API build command, `DATABASE_URL`, and optional `DATABASE_SSL_CA`; start with `node apps/api/dist/worker.js`. Supply `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `MAIL_FROM` securely. Review any additional worker cost before provisioning it.
 
-## Verification and operations
+Before live use, configure backups appropriate to the Supabase plan, create the administrator, verify sign-in and invitations, race duplicate-number requests in a test exchange, and confirm only the signed-in participant sees their recipient. Local database tests must use a disposable database ending in `_test`; never run destructive tests against production.
 
-- Run `npm test`, `npm run build:api`, and both frontend builds before pushing.
-- Run the opt-in API integration test against a disposable MySQL database before live use.
-- Monitor each Render deployment to a terminal `live` state; creation/approval alone is not deployment success.
-- Test signup, invitation acceptance, exclusions, concurrent picks, recipient privacy, reset, and separate admin login after deployment.
-- Keep the MySQL service private. Back up with mysqldump or a MySQL-aware backup tool; a disk snapshot alone is not a database backup strategy.
-- Disable automatic Blueprint sync during first setup. Explicitly enable it later only if future infrastructure pushes should apply automatically.
-
-References: https://render.com/docs/blueprint-spec.md, https://render.com/docs/deploy-mysql.md, https://render.com/docs/private-network.md
+References:
+- https://supabase.com/docs/guides/database/connecting-to-postgres
+- https://node-postgres.com/features/ssl
+- https://render.com/docs/blueprint-spec

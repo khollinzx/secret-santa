@@ -1,6 +1,6 @@
 # Secret Santa
 
-A participant app and a separate admin app, with a NestJS API and MySQL 8.4 persistence. Participants choose numbered cards; each card has a fixed, hidden recipient. A matching algorithm blocks choices that violate exclusions or strand another participant.
+A participant app and a separate admin app, with a NestJS API and Supabase PostgreSQL persistence. Participants choose numbered cards; each card has a fixed, hidden recipient. A matching algorithm blocks choices that violate exclusions or strand another participant.
 
 ## What works
 
@@ -8,14 +8,14 @@ A participant app and a separate admin app, with a NestJS API and MySQL 8.4 pers
 - Exchange creation, date/budget rules, invitations by reusable group link or email-bound link, membership, per-event wishlists, and gift-ready status.
 - Registration closure, secure shuffled pools, mutual/directional exclusions, transactional selection, repeat-request idempotency, private reveal, reminder requests, deadline extension, reset, cancellation, and completion.
 - Admin dashboard, event progress, user suspension/restoration, notification status/retries, and audit history. Hidden mappings are never exposed through admin endpoints.
-- Durable MySQL notification outbox and SMTP worker, with retries/backoff and crash recovery. SQL-backed jobs keep this first version deployable without Redis.
+- Durable PostgreSQL notification outbox and SMTP worker, with retries/backoff and crash recovery. SQL-backed jobs keep this first version deployable without Redis.
 - Responsive participant and admin interfaces, keyboard-accessible selection and confirmation dialogs, and explicit browser-preview mode.
 
 ## Preview versus real application
 
-The hosted preview is a **static interactive demonstration**. It has no live MySQL connection. Sample people and hidden mappings are stored in browser localStorage and can be inspected; they are not suitable for real secret exchanges. The profile menu switches sample participants and resets the sample workspace. No email is sent in preview mode.
+The hosted preview is a **static interactive demonstration**. It has no live PostgreSQL connection. Sample people and hidden mappings are stored in browser localStorage and can be inspected; they are not suitable for real secret exchanges. The profile menu switches sample participants and resets the sample workspace. No email is sent in preview mode.
 
-When `NEXT_PUBLIC_API_URL` is configured at build time, the same frontend uses the authenticated API instead of sample data. Production hidden mappings remain in MySQL and are never included in pool responses. Login sessions are stored in sessionStorage, independently for participant and administrator audiences.
+When `NEXT_PUBLIC_API_URL` is configured at build time, the same frontend uses the authenticated API instead of sample data. Production hidden mappings remain in PostgreSQL and are never included in pool responses. Login sessions are stored in sessionStorage, independently for participant and administrator audiences.
 
 ## Project layout
 
@@ -24,16 +24,16 @@ apps/web/       Participant Next.js application (plus /admin/login and gated /ad
 apps/admin/     Independently built Next.js admin application
 apps/api/       NestJS API, administrator bootstrap, and SMTP worker
 packages/domain/ Shared matching and number-eligibility logic
-database/       Versioned initial MySQL schema
+database/       Versioned initial PostgreSQL schema
 scripts/        Build and preview helpers
-tests/          Matching tests and opt-in MySQL API integration test
+tests/          Matching tests and opt-in PostgreSQL API integration test
 ```
 
 ## Run the real application with Docker
 
 Requirements: Node.js 22+ if building locally; Docker Engine and Compose for the stack.
 
-1. Copy `.env.example` to `.env` and replace both MySQL passwords with unique, random URL-safe alphanumeric values.
+1. Copy `.env.example` to `.env` and replace POSTGRES_PASSWORD with unique, random URL-safe alphanumeric values.
 2. Set `WEB_ORIGIN`, `ADMIN_ORIGIN`, and `NEXT_PUBLIC_API_URL` to your intended browser-facing addresses. Defaults are `http://localhost:3000`, `http://localhost:3001`, and `http://localhost:4000`.
 3. Start the stack:
 
@@ -41,7 +41,7 @@ Requirements: Node.js 22+ if building locally; Docker Engine and Compose for the
 docker compose up -d --build
 ```
 
-The MySQL container applies `database/001_initial.sql` automatically **only on its first initialization with a new volume**. For an existing database, back up first and apply the versioned SQL as an explicit migration. Do not delete a volume to apply migrations.
+The API startup runs the checksummed migration inside a transaction and an advisory lock. It creates the private `secret_santa` schema without changing other application schemas. Later starts skip the already-applied migration. Never delete a volume to apply migrations. Wait for the API health check before bootstrapping an administrator.
 
 Local entries:
 
@@ -75,11 +75,12 @@ Invitations and reminders are persisted atomically with their originating action
 
 ## Local development without Docker
 
-Provision MySQL 8.4, create a database/user, and apply `database/001_initial.sql`. Set `DATABASE_URL` in `.env` to that database.
+Provision PostgreSQL 17+ and set `DATABASE_URL` in `.env`. For Supabase use the session-pooler connection string from your project’s Connect panel (port 5432), including your URL-encoded database password. Hosted connections require verified TLS; set `DATABASE_SSL_CA` if the project requires its downloaded CA certificate. The application retains its existing participant sessions and administrator TOTP authentication. Supabase is the database provider; Supabase Auth and browser Data API access are not enabled.
 
 ```bash
 npm ci
 npm run build:api
+node --env-file=.env scripts/migrate-postgres.mjs
 node --env-file=.env apps/api/dist/main.js
 ```
 
@@ -115,7 +116,7 @@ npm run build
 
 The regular test command runs the pure matching checks and skips database integration unless `TEST_DATABASE_URL` is explicitly set. The matching tests exhaust all allowed selection paths for a five-person exchange, verify exclusions, protect the final participant, prevent repeat picks, and check a 100-person pool.
 
-To run the API integration test, create a dedicated disposable MySQL database whose name ends in `_test`, grant a test user access, and set `TEST_DATABASE_URL` to it. Build the API first. Then:
+To run the API integration test, create a dedicated disposable PostgreSQL database whose name ends in `_test`, grant a test user access, and set `TEST_DATABASE_URL` to it. Build the API first. Then:
 
 ```bash
 node --env-file=.env --test tests/api.integration.test.mjs
@@ -161,7 +162,7 @@ All endpoints except registration/login require `Authorization: Bearer <opaque-s
 
 ## Current limits and follow-up work
 
-This is an initial MVP, not a fully operated production service. Database/Docker integration and live SMTP delivery require the external runtime and credentials described above. No real email was sent during implementation.
+This is an initial MVP, not a fully operated production service. Hosted database connectivity and live SMTP delivery require the credentials described above. No real email was sent during implementation.
 
 Email-address verification, password recovery, organiser removal of participants before picking, anonymous messaging, automatic identity reveal, staff-role management UI, configurable platform defaults, formal audit export, and pagination beyond the current bounded admin lists are not implemented. Platform defaults are configuration values; there is no placeholder settings screen.
 
@@ -169,7 +170,7 @@ The draw is secret by application access controls, not end-to-end encryption aga
 
 Dates are event calendar dates; backend deadlines currently end at UTC midnight after that date. Configure an explicit event timezone before offering timezone-specific deadlines internationally. All sample data is fictional preview content.
 
-Before using with real groups, run the MySQL integration suite in your deployment environment, configure HTTPS and backups, verify email delivery, and provision your administrator account.
+Before using with real groups, run the PostgreSQL integration suite in your deployment environment, configure HTTPS and backups, verify email delivery, and provision your administrator account.
 
 Official framework references:
 - https://nextjs.org/docs/app/guides/static-exports
@@ -178,3 +179,7 @@ Official framework references:
 ## Administrator entry
 
 The participant app has no admin navigation link. Open `/admin/login/` directly to sign in. Visiting `/admin/` without a separate administrator session redirects there. The independent admin app exposes the same `/admin/login/` route on its own origin. Production sign-in verifies password, TOTP, role, and session audience through the API. The hosted sample preview disables credential fields and offers an explicitly labelled sample-data entry; it is not real authentication. Admin preview sign-out clears that separate preview session.
+
+## Render and Supabase
+
+See [deploy/RENDER.md](deploy/RENDER.md) for the existing Render API service, two static frontends, and Supabase project `twydcpdjkwxgwapqsedm`. The Blueprint does not provision a Render database or persistent disk. The private schema enables row level security and revokes access from Supabase anonymous/authenticated Data API roles. Only the backend PostgreSQL connection accesses assignments, passwords, and sessions.
