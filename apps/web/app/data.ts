@@ -1,3 +1,4 @@
+import {fetchJson} from './http.mjs';
 // The hosted preview uses sample data in this browser. Production uses the API.
 // @ts-ignore shared pure JavaScript domain
 import {preparePool,eligibleNumbers} from '../../../packages/domain/draw.mjs';
@@ -20,7 +21,7 @@ function save(state:any){localStorage.setItem(KEY,JSON.stringify(state));}
 export function previewUsers(){return read().users;}
 export function resetPreview(){localStorage.removeItem(KEY);}
 export async function request(path:string,method='GET',body?:any,admin=false):Promise<any>{
- if(API){const token=sessionStorage.getItem(admin?'santa-admin-token':'santa-token');const res=await fetch(API+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});const result=await res.json();if(!res.ok)throw new Error(result.message||'Unable to complete this action.');return result;}
+ if(API){const token=sessionStorage.getItem(admin?'santa-admin-token':'santa-token');return fetchJson(API+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});}
  const run=()=>demo(path,method,body,admin);
  if(navigator.locks)return navigator.locks.request('secret-santa-preview',run);
  return run();

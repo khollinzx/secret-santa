@@ -28,8 +28,9 @@ export default function Portal({admin=false,loginPage=false}:{admin?:boolean;log
   if(admin&&loginPage){setReady(true);return;}
   if(admin&&!sessionStorage.getItem(API?'santa-admin-token':'santa-admin-preview-session')){location.replace(adminLoginUrl);return;}
   const invitation=new URLSearchParams(location.search).get('invite');if(invitation)setPendingInvite(invitation);
+  if(API&&!sessionStorage.getItem(admin?'santa-admin-token':'santa-token')){setReady(true);return;}
   if(!API)setPreviewPeople(previewUsers());
-  load().catch((e:any)=>{setUser(null);if(admin){sessionStorage.removeItem('santa-admin-token');location.replace(adminLoginUrl);}else if(!API)setError(e.message);}).finally(()=>setReady(true));
+  load().catch((e:any)=>{setUser(null);if(e.status===401||e.status===403){sessionStorage.removeItem(admin?'santa-admin-token':'santa-token');if(admin)location.replace(adminLoginUrl);}else setError(e.message);}).finally(()=>setReady(true));
  },[]);
  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'){setModal('');setProfile(false);}};document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);},[]);
  async function auth(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!API){setError('Real administrator sign-in requires the configured API. Use the clearly labelled sample preview below.');return;}const f=new FormData(event.currentTarget);setBusy(true);setError('');try{const r=await request(`/auth/${authMode==='register'?'register':'login'}`,'POST',{name:f.get('name'),email:f.get('email'),password:f.get('password'),audience:admin?'admin':'participant',code:f.get('code')||undefined},admin);sessionStorage.setItem(admin?'santa-admin-token':'santa-token',r.token);if(admin){location.replace(adminUrl);return;}await load();}catch(e:any){setError(e.message);}finally{setBusy(false);}}
